@@ -6,7 +6,6 @@ export class VirtualCube {
   private currentState: any = null;
   private solvedState: any = null;
 
-  // Carga las matemáticas del 3x3 (se llama una sola vez al conectar)
   async init() {
     if (!this.kpuzzle) {
       this.kpuzzle = await puzzles['3x3x3'].kpuzzle();
@@ -15,7 +14,13 @@ export class VirtualCube {
     }
   }
 
-  // Aplica un giro físico al estado virtual
+  // NUEVO: Resetea la memoria matemática del cubo
+  reset() {
+    if (this.solvedState) {
+      this.currentState = this.solvedState;
+    }
+  }
+
   applyMove(move: string) {
     if (!this.kpuzzle) return;
     try {
@@ -26,12 +31,10 @@ export class VirtualCube {
     }
   }
 
-  // Compara el estado actual con el estado resuelto perfecto
   isSolved(): boolean {
     if (!this.currentState || !this.solvedState) return false;
     return this.currentState.isIdentical(this.solvedState);
   }
 }
 
-// Exportamos una única instancia (Singleton) para usarla en toda la app
 export const virtualCube = new VirtualCube();

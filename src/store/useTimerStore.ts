@@ -3,8 +3,20 @@ import type { SmartCube } from '../hardware/SmartCube';
 import { randomScrambleForEvent } from 'cubing/scramble';
 import { virtualCube } from '../services/VirtualCube';
 
-// Añadimos 'scrambling' a los estados posibles
 type TimerStatus = 'scrambling' | 'idle' | 'running' | 'stopped';
+
+export const getInverseMove = (move: string): string => {
+  if (move.endsWith("'")) return move.slice(0, -1);
+  if (move.endsWith('2')) return move;
+  return move + "'";
+};
+
+// Traductor matemático: Convierte strings en cuartos de vuelta
+export const parseMove = (m: string) => {
+  const face = m[0];
+  const turns = m.includes('2') ? 2 : m.includes("'") ? 3 : 1;
+  return { face, turns };
+};
 
 interface TimerState {
   activeCube: SmartCube | null;
@@ -15,11 +27,17 @@ interface TimerState {
   startTime: number;
   time: number;
   scramble: string;
+  
+  // Tracking simplificado y robusto
+  scrambleMoves: string[];
+  scrambleIndex: number;
+  currentFaceProgress: number; // Acumulador de cuartos de vuelta
+  errorStack: string[];        // Ahora soporta múltiples errores seguidos
 
   connectCube: (cube: SmartCube) => Promise<void>;
   disconnectCube: () => void;
   generateScramble: () => Promise<void>;
-  setIdle: () => void; // Nueva acción
+  setIdle: () => void;
   startTimer: () => void;
   stopTimer: () => void;
 }
@@ -29,31 +47,73 @@ export const useTimerStore = create<TimerState>((set, get) => ({
   isConnected: false,
   lastMove: '',
   
-  status: 'scrambling', // Comenzamos en modo de mezcla
+  status: 'scrambling',
   startTime: 0,
   time: 0,
   scramble: 'Cargando scramble...',
+  
+  scrambleMoves: [],
+  scrambleIndex: 0,
+  currentFaceProgress: 0,
+  errorStack: [],
 
   connectCube: async (cube: SmartCube) => {
     try {
-      await virtualCube.init(); // Inicializamos el motor 3D invisible
+      await virtualCube.init();
       await cube.connect();
       
       cube.onMove((move) => {
-        const { status, startTimer, stopTimer } = get();
+        const { status, scrambleMoves, scrambleIndex, currentFaceProgress, errorStack, startTimer, stopTimer } = get();
         set({ lastMove: move });
         
-        // 1. Siempre sincronizamos el cubo físico con el virtual
         virtualCube.applyMove(move);
 
-        // 2. Lógica de reaccion según el estado actual
-        if (status === 'idle') {
-          // El usuario terminó de mezclar, este es el primer giro del solve
+        if (status === 'scrambling') {
+          const { face, turns } = parseMove(move);
+
+          if (errorStack.length > 0) {
+            // Lógica para deshacer errores acumulados
+            const lastError = errorStack[errorStack.length - 1];
+            if (move === getInverseMove(lastError)) {
+              const newStack = [...errorStack];
+              newStack.pop();
+              set({ errorStack: newStack });
+            } else {
+              set({ errorStack: [...errorStack, move] }); // Acumula el nuevo error
+            }
+          } else {
+            // Lógica de avance de mezcla con Matemática Modular
+            const expectedStr = scrambleMoves[scrambleIndex];
+            const exp = parseMove(expectedStr);
+
+            if (face === exp.face) {
+              const newProgress = (currentFaceProgress + turns) % 4;
+              
+              if (newProgress === exp.turns) {
+                // Paso completado
+                const nextIndex = scrambleIndex + 1;
+                set({ 
+                  scrambleIndex: nextIndex, 
+                  currentFaceProgress: 0,
+                  status: nextIndex === scrambleMoves.length ? 'idle' : 'scrambling'
+                });
+              } else if (newProgress === 0) {
+                // El usuario se arrepintió y deshizo su giro a medias
+                set({ currentFaceProgress: 0 });
+              } else {
+                // Progreso a medias (ej. hizo U, pero le falta otro para el U2)
+                set({ currentFaceProgress: newProgress });
+              }
+            } else {
+              // Tocó la cara equivocada, es un error
+              set({ errorStack: [move] });
+            }
+          }
+        } else if (status === 'idle') {
           startTimer();
         } else if (status === 'running') {
-          // El cronómetro corre, comprobamos en milisegundos si ya se armó
           if (virtualCube.isSolved()) {
-            stopTimer(); // ¡DETENCIÓN AUTOMÁTICA!
+            stopTimer();
           }
         }
       });
@@ -72,8 +132,21 @@ export const useTimerStore = create<TimerState>((set, get) => ({
   },
 
   generateScramble: async () => {
+    virtualCube.reset(); // LIMPIAMOS LA MEMORIA VIRTUAL AQUÍ
+    
     const scrambleObj = await randomScrambleForEvent('333');
-    set({ scramble: scrambleObj.toString(), status: 'scrambling', time: 0 });
+    const scrambleStr = scrambleObj.toString();
+    const moves = scrambleStr.split(/\s+/).filter(Boolean);
+    
+    set({ 
+      scramble: scrambleStr, 
+      scrambleMoves: moves,
+      scrambleIndex: 0,
+      currentFaceProgress: 0,
+      errorStack: [],
+      status: 'scrambling', 
+      time: 0 
+    });
   },
 
   setIdle: () => set({ status: 'idle' }),

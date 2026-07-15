@@ -1,8 +1,20 @@
 import { useEffect, useState, useRef } from 'react';
-import { useTimerStore } from '../store/useTimerStore';
+import { useTimerStore, getInverseMove } from '../store/useTimerStore';
 
 export function TimerDisplay() {
-  const { status, startTime, time, scramble, stopTimer, generateScramble, setIdle } = useTimerStore();
+  const { 
+    status, 
+    startTime, 
+    time, 
+    scrambleMoves, 
+    scrambleIndex, 
+    currentFaceProgress,
+    errorStack, 
+    stopTimer, 
+    generateScramble, 
+    setIdle 
+  } = useTimerStore();
+  
   const [displayTime, setDisplayTime] = useState(0);
   const requestRef = useRef<number>(0);
 
@@ -26,68 +38,86 @@ export function TimerDisplay() {
     } else {
       setDisplayTime(0);
     }
-    
     return () => cancelAnimationFrame(requestRef.current);
   }, [status, startTime, time]);
 
-  // NUEVA LÓGICA DE TECLADO
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
-        e.preventDefault(); // Evita que la página baje si presionas espacio
-        
-        // Obtenemos el estado más reciente directamente del store
+        e.preventDefault(); 
         const currentStatus = useTimerStore.getState().status;
-        
-        if (currentStatus === 'scrambling') {
-          // Terminé de mezclar físicamente -> Pasar a Listo
-          setIdle();
-        } else if (currentStatus === 'running') {
-          // Abortar el solve a la mitad (DNF o error)
-          stopTimer();
-        } else if (currentStatus === 'stopped') {
-          // Pedir otra mezcla
-          generateScramble();
-        }
+        if (currentStatus === 'scrambling') setIdle();
+        else if (currentStatus === 'running') stopTimer();
+        else if (currentStatus === 'stopped') generateScramble();
       }
     };
-    
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setIdle, stopTimer, generateScramble]);
 
   const formatTime = (ms: number) => (ms / 1000).toFixed(3);
 
-  // Mensajes de ayuda dinámicos según el estado
-  const getHelperText = () => {
-    switch (status) {
-      case 'scrambling': return '🧩 Mezcla tu cubo y presiona ESPACIO cuando estés listo';
-      case 'idle': return '🔥 ¡Listo! Haz tu primer giro para iniciar el cronómetro';
-      case 'running': return '⏱️ Resolviendo... (Espacio para abortar)';
-      case 'stopped': return '✅ ¡Cubo resuelto! Presiona ESPACIO para una nueva mezcla';
-      default: return '';
+  const renderScrambleArea = () => {
+    if (status === 'scrambling' && errorStack.length > 0) {
+      const lastError = errorStack[errorStack.length - 1];
+      const requiredUndo = getInverseMove(lastError);
+
+      return (
+        <div style={{ minHeight: '80px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ fontSize: '28px', color: '#ff3333', fontWeight: 'bold', display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            ⚠️ ERROR: {errorStack.map((err, i) => (
+              <span key={i} style={{ textDecoration: i === errorStack.length - 1 ? 'underline' : 'none' }}>
+                {err} {i < errorStack.length - 1 ? '➔' : ''}
+              </span>
+            ))}
+          </div>
+          <p style={{ margin: '8px 0 0 0', color: '#ffaaaa', fontSize: '14px', fontWeight: 'bold' }}>
+            Deshaz el último giro haciendo: <span style={{ backgroundColor: '#ff3333', color: 'white', padding: '3px 10px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '16px' }}>{requiredUndo}</span>
+          </p>
+        </div>
+      );
     }
+
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '12px', fontSize: '26px', fontWeight: 'bold', minHeight: '80px', alignItems: 'center', padding: '0 20px' }}>
+        {scrambleMoves.map((move, index) => {
+          let color = '#444444';
+          let borderBottom = 'none';
+
+          if (status === 'scrambling') {
+            if (index < scrambleIndex) {
+              color = '#4caf50'; // Completado
+            } else if (index === scrambleIndex) {
+              if (currentFaceProgress !== 0) {
+                color = '#ff9800'; // A medias (Naranja)
+                borderBottom = '3px dashed #ff9800';
+              } else {
+                color = '#ffcc00'; // Actual (Amarillo)
+                borderBottom = '3px solid #ffcc00';
+              }
+            }
+          } else {
+            color = '#ffcc00'; // Mezcla terminada
+          }
+
+          return (
+            <span key={index} style={{ color, borderBottom, paddingBottom: '2px', transition: 'all 0.2s ease', display: 'inline-block' }}>
+              {move}
+            </span>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
     <div style={{ textAlign: 'center', marginTop: '20px', width: '100%' }}>
-      <div style={{ fontSize: '24px', color: '#ffcc00', marginBottom: '30px', fontWeight: 'bold', letterSpacing: '1px' }}>
-        {scramble}
-      </div>
-      
-      <div style={{ 
-        fontSize: '140px', 
-        fontWeight: 'bold', 
-        fontFamily: 'monospace',
-        color: status === 'running' ? '#4caf50' : status === 'idle' ? '#ff3333' : 'white',
-        lineHeight: 1,
-        transition: 'color 0.2s'
-      }}>
+      <div style={{ marginBottom: '40px' }}>{renderScrambleArea()}</div>
+      <div style={{ fontSize: '140px', fontWeight: 'bold', fontFamily: 'monospace', color: status === 'running' ? '#4caf50' : status === 'idle' ? '#ff3333' : 'white', lineHeight: 1, transition: 'color 0.2s' }}>
         {formatTime(displayTime)}
       </div>
-
-      <div style={{ marginTop: '30px', color: '#888', fontSize: '16px', fontWeight: 'bold' }}>
-        {getHelperText()}
+      <div style={{ marginTop: '40px', color: '#aaa', fontSize: '16px', fontWeight: '500' }}>
+        {status === 'scrambling' ? '🧩 Sigue la mezcla en pantalla' : status === 'idle' ? '🔥 ¡Mezclado! Haz tu primer giro para arrancar' : status === 'running' ? '⏱️ Resolviendo... se detendrá automáticamente' : '✅ ¡Excelente tiempo! Presiona ESPACIO para una nueva mezcla'}
       </div>
     </div>
   );
