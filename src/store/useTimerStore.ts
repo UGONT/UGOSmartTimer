@@ -11,7 +11,6 @@ export const getInverseMove = (move: string): string => {
   return move + "'";
 };
 
-// Traductor matemático: Convierte strings en cuartos de vuelta
 export const parseMove = (m: string) => {
   const face = m[0];
   const turns = m.includes('2') ? 2 : m.includes("'") ? 3 : 1;
@@ -28,15 +27,14 @@ interface TimerState {
   time: number;
   scramble: string;
   
-  // Tracking simplificado y robusto
   scrambleMoves: string[];
   scrambleIndex: number;
-  currentFaceProgress: number; // Acumulador de cuartos de vuelta
-  errorStack: string[];        // Ahora soporta múltiples errores seguidos
+  currentFaceProgress: number;
+  errorStack: string[];
 
   connectCube: (cube: SmartCube) => Promise<void>;
   disconnectCube: () => void;
-  generateScramble: () => Promise<void>;
+  generateScramble: (triggeringMove?: string) => Promise<void>;
   setIdle: () => void;
   startTimer: () => void;
   stopTimer: () => void;
@@ -63,26 +61,30 @@ export const useTimerStore = create<TimerState>((set, get) => ({
       await cube.connect();
       
       cube.onMove((move) => {
-        const { status, scrambleMoves, scrambleIndex, currentFaceProgress, errorStack, startTimer, stopTimer } = get();
+        const { status, scrambleMoves, scrambleIndex, currentFaceProgress, errorStack, startTimer, stopTimer, generateScramble } = get();
         set({ lastMove: move });
         
+        // 1. Guardar el estado de resuelto ANTES de aplicar el movimiento de activación
+        const wasSolved = virtualCube.isSolved();
+
+        // 2. Sincronizar el cubo virtual con el giro físico
         virtualCube.applyMove(move);
 
         if (status === 'scrambling') {
+          if (scrambleMoves.length === 0) return; // Evitar carreras asíncronas mientras se genera la mezcla
+
           const { face, turns } = parseMove(move);
 
           if (errorStack.length > 0) {
-            // Lógica para deshacer errores acumulados
             const lastError = errorStack[errorStack.length - 1];
             if (move === getInverseMove(lastError)) {
               const newStack = [...errorStack];
               newStack.pop();
               set({ errorStack: newStack });
             } else {
-              set({ errorStack: [...errorStack, move] }); // Acumula el nuevo error
+              set({ errorStack: [...errorStack, move] });
             }
           } else {
-            // Lógica de avance de mezcla con Matemática Modular
             const expectedStr = scrambleMoves[scrambleIndex];
             const exp = parseMove(expectedStr);
 
@@ -90,7 +92,6 @@ export const useTimerStore = create<TimerState>((set, get) => ({
               const newProgress = (currentFaceProgress + turns) % 4;
               
               if (newProgress === exp.turns) {
-                // Paso completado
                 const nextIndex = scrambleIndex + 1;
                 set({ 
                   scrambleIndex: nextIndex, 
@@ -98,14 +99,11 @@ export const useTimerStore = create<TimerState>((set, get) => ({
                   status: nextIndex === scrambleMoves.length ? 'idle' : 'scrambling'
                 });
               } else if (newProgress === 0) {
-                // El usuario se arrepintió y deshizo su giro a medias
                 set({ currentFaceProgress: 0 });
               } else {
-                // Progreso a medias (ej. hizo U, pero le falta otro para el U2)
                 set({ currentFaceProgress: newProgress });
               }
             } else {
-              // Tocó la cara equivocada, es un error
               set({ errorStack: [move] });
             }
           }
@@ -114,6 +112,13 @@ export const useTimerStore = create<TimerState>((set, get) => ({
         } else if (status === 'running') {
           if (virtualCube.isSolved()) {
             stopTimer();
+          }
+        } else if (status === 'stopped') {
+          // CONTROL INTELIGENTE DE NUEVA MEZCLA:
+          // Solo genera la mezcla si el cubo físico estaba completamente armado antes de girar.
+          if (wasSolved) {
+            set({ status: 'scrambling', scramble: 'Generando mezcla...', scrambleMoves: [] });
+            generateScramble(move);
           }
         }
       });
@@ -131,19 +136,24 @@ export const useTimerStore = create<TimerState>((set, get) => ({
     set({ activeCube: null, isConnected: false, lastMove: '', status: 'scrambling', time: 0 });
   },
 
-  generateScramble: async () => {
-    virtualCube.reset(); // LIMPIAMOS LA MEMORIA VIRTUAL AQUÍ
-    
+  generateScramble: async (triggeringMove?: string) => {
+    // Generar la mezcla en segundo plano para evitar tirones asíncronos
     const scrambleObj = await randomScrambleForEvent('333');
     const scrambleStr = scrambleObj.toString();
     const moves = scrambleStr.split(/\s+/).filter(Boolean);
+    
+    virtualCube.reset();
+    
+    if (triggeringMove) {
+      virtualCube.applyMove(triggeringMove);
+    }
     
     set({ 
       scramble: scrambleStr, 
       scrambleMoves: moves,
       scrambleIndex: 0,
       currentFaceProgress: 0,
-      errorStack: [],
+      errorStack: triggeringMove ? [triggeringMove] : [],
       status: 'scrambling', 
       time: 0 
     });

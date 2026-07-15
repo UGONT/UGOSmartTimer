@@ -117,7 +117,7 @@ export function TimerDisplay() {
         {formatTime(displayTime)}
       </div>
       <div style={{ marginTop: '40px', color: '#aaa', fontSize: '16px', fontWeight: '500' }}>
-        {status === 'scrambling' ? '🧩 Sigue la mezcla en pantalla' : status === 'idle' ? '🔥 ¡Mezclado! Haz tu primer giro para arrancar' : status === 'running' ? '⏱️ Resolviendo... se detendrá automáticamente' : '✅ ¡Excelente tiempo! Presiona ESPACIO para una nueva mezcla'}
+        {status === 'scrambling' ? '🧩 Sigue la mezcla en pantalla' : status === 'idle' ? '🔥 ¡Mezclado! Haz tu primer giro para arrancar' : status === 'running' ? '⏱️ Resolviendo... se detendrá automáticamente' : '✅ ¡Excelente tiempo! Gira tu cubo armado o presiona ESPACIO para otra mezcla'}
       </div>
     </div>
   );
