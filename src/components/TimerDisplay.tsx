@@ -1,18 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useTimerStore, getInverseMove } from '../store/useTimerStore';
+import { CubeVisualizer } from './CubeVisualizer';
 
 export function TimerDisplay() {
   const { 
-    status, 
-    startTime, 
-    time, 
-    scrambleMoves, 
-    scrambleIndex, 
-    currentFaceProgress,
-    errorStack, 
-    stopTimer, 
-    generateScramble, 
-    setIdle 
+    status, startTime, time, scrambleMoves, scrambleIndex, currentFaceProgress, errorStack, solveCount, stopTimer, generateScramble, setIdle 
   } = useTimerStore();
   
   const [displayTime, setDisplayTime] = useState(0);
@@ -86,18 +78,18 @@ export function TimerDisplay() {
 
           if (status === 'scrambling') {
             if (index < scrambleIndex) {
-              color = '#4caf50'; // Completado
+              color = '#4caf50'; 
             } else if (index === scrambleIndex) {
               if (currentFaceProgress !== 0) {
-                color = '#ff9800'; // A medias (Naranja)
+                color = '#ff9800'; 
                 borderBottom = '3px dashed #ff9800';
               } else {
-                color = '#ffcc00'; // Actual (Amarillo)
+                color = '#ffcc00'; 
                 borderBottom = '3px solid #ffcc00';
               }
             }
           } else {
-            color = '#ffcc00'; // Mezcla terminada
+            color = '#ffcc00'; 
           }
 
           return (
@@ -111,11 +103,20 @@ export function TimerDisplay() {
   };
 
   return (
-    <div style={{ textAlign: 'center', marginTop: '20px', width: '100%' }}>
+    <div style={{ textAlign: 'center', width: '100%' }}>
+      <CubeVisualizer />
+      
+      {/* NÚMERO DE RESOLUCIÓN PÁLIDO */}
+      <div style={{ color: '#555', fontSize: '14px', fontWeight: 'bold', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '10px' }}>
+         #{status === 'scrambling' ? solveCount + 1 : solveCount}
+      </div>
+
       <div style={{ marginBottom: '40px' }}>{renderScrambleArea()}</div>
+      
       <div style={{ fontSize: '140px', fontWeight: 'bold', fontFamily: 'monospace', color: status === 'running' ? '#4caf50' : status === 'idle' ? '#ff3333' : 'white', lineHeight: 1, transition: 'color 0.2s' }}>
         {formatTime(displayTime)}
       </div>
+      
       <div style={{ marginTop: '40px', color: '#aaa', fontSize: '16px', fontWeight: '500' }}>
         {status === 'scrambling' ? '🧩 Sigue la mezcla en pantalla' : status === 'idle' ? '🔥 ¡Mezclado! Haz tu primer giro para arrancar' : status === 'running' ? '⏱️ Resolviendo... se detendrá automáticamente' : '✅ ¡Excelente tiempo! Gira tu cubo armado o presiona ESPACIO para otra mezcla'}
       </div>

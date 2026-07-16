@@ -9,4 +9,6 @@ export interface SmartCube {
   // Un método al que le pasaremos una función para que se ejecute 
   // cada vez que el jugador gire una cara del cubo.
   onMove(callback: (move: string) => void): void;
+
+  onGyro(callback: (orientation: { x: number; y: number; z: number }) => void): void;
 }
